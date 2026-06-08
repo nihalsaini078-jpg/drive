@@ -5,19 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mera Personal Secure Drive</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; text-align: center; padding: 30px; display: none; } /* Pehle hidden rahega */
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; text-align: center; padding: 30px; display: none; }
         .box { background: white; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; width: 100%; }
         h1 { color: #333; margin-bottom: 20px; }
         input[type="file"] { margin: 20px 0; padding: 10px; border: 2px dashed #bbb; border-radius: 8px; width: 80%; cursor: pointer; }
         button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
         button:hover { background: #0056b3; }
-        
-        /* Gallery and Card Design */
         .gallery { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; padding: 20px; }
         .photo-card { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; }
         .photo-card img { width: 100%; height: 150px; object-fit: cover; border-radius: 6px; }
-        
-        /* Delete Button Style */
         .delete-btn { background: #dc3545; color: white; border: none; padding: 6px 12px; font-size: 12px; border-radius: 4px; margin-top: 10px; width: 100%; cursor: pointer; }
         .delete-btn:hover { background: #bd2130; }
     </style>
@@ -39,18 +35,16 @@
     <div id="gallery" class="gallery"></div>
 
     <script>
-        // Password System (Aap yahan apna manpasand password set kar sakte hain)
         const MY_PASSWORD = "kaal"; 
         
         const userPass = prompt("MeraDrive ka Password daalein:");
         if (userPass === MY_PASSWORD) {
-            document.body.style.display = "block"; // Password sahi hone par website dikhao
+            document.body.style.display = "block";
         } else {
             alert("Galat Password! Access Denied.");
             window.location.reload();
         }
 
-        // Aapka Firebase Config
         const firebaseConfig = {
             apiKey: "AIzaSyBVOp477UMzAuxIw1e-GG3ZR2e1oEX3SwY",
             authDomain: "meradrive-816fa.firebaseapp.com",
@@ -68,7 +62,62 @@
         const uploadBtn = document.getElementById('uploadBtn');
         const gallery = document.getElementById('gallery');
 
-        // PHOTO UPLOAD LOGIC
+        // AUTOMATIC IMAGE COMPRESSOR FUNCTION
+        function compressAndUpload(file) {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = function (event) {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    // Max width/height set karna taaki photo bohot badi na ho
+                    const MAX_WIDTH = 1000;
+                    const MAX_HEIGHT = 1000;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Quality ko 0.6 (60%) par compress karna taaki size 1MB se kam ho jaye
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+
+                    // Firebase mein save karna
+                    db.collection("my_photos").add({
+                        url: compressedBase64,
+                        name: file.name,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    }).then(() => {
+                        alert("Photo successfully upload ho gayi!");
+                        uploadBtn.innerText = "Upload Karein";
+                        uploadBtn.disabled = false;
+                        fileChooser.value = '';
+                    }).catch((error) => {
+                        alert("Error: " + error.message);
+                        uploadBtn.innerText = "Upload Karein";
+                        uploadBtn.disabled = false;
+                    });
+                };
+            };
+        }
+
+        // UPLOAD BUTTON CLICK EVENT
         uploadBtn.addEventListener('click', () => {
             const file = fileChooser.files[0];
             if (!file) {
@@ -79,45 +128,24 @@
             uploadBtn.innerText = "Uploading...";
             uploadBtn.disabled = true;
 
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = function () {
-                const base64String = reader.result;
-
-                db.collection("my_photos").add({
-                    url: base64String,
-                    name: file.name,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                }).then(() => {
-                    alert("Photo successfully upload ho gayi!");
-                    uploadBtn.innerText = "Upload Karein";
-                    uploadBtn.disabled = false;
-                    fileChooser.value = '';
-                }).catch((error) => {
-                    alert("Error: " + error.message);
-                    uploadBtn.innerText = "Upload Karein";
-                    uploadBtn.disabled = false;
-                });
-            };
+            // Compressor function ko call karna
+            compressAndUpload(file);
         });
 
-        // PHOTOS FETCH & DISPLAY + DELETE LOGIC
+        // DISPLAY & DELETE LOGIC
         db.collection("my_photos").orderBy("timestamp", "desc").onSnapshot((snapshot) => {
             gallery.innerHTML = '';
             snapshot.forEach((doc) => {
                 const data = doc.data();
-                const docId = doc.id; // Har photo ki unique ID
+                const docId = doc.id;
 
-                // Card Container banana
                 const card = document.createElement('div');
                 card.className = 'photo-card';
 
-                // Image element
                 const img = document.createElement('img');
                 img.src = data.url;
                 img.alt = data.name;
 
-                // Delete Button element
                 const delBtn = document.createElement('button');
                 delBtn.className = 'delete-btn';
                 delBtn.innerText = 'Delete';
@@ -129,11 +157,8 @@
                     }
                 };
 
-                // Card mein image aur button daalna
                 card.appendChild(img);
                 card.appendChild(delBtn);
-                
-                // Gallery mein card daalna
                 gallery.appendChild(card);
             });
         });
